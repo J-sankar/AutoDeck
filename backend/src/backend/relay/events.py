@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from queue import Queue
 from threading import Lock
 from typing import Any
 
+import httpx
+from dotenv import load_dotenv
+
 logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 MAX_EVENTS = 100
 PUBLISH_ATTEMPTS = 3
@@ -40,6 +47,7 @@ class EventRelay:
             raise ValueError("max_events must be positive")
         self._events: deque[Event] = deque(maxlen=max_events)
         self._lock = Lock()
+        self._subscribers: set[Queue[Event]] = set()
 
     def publish(
         self,
@@ -63,6 +71,9 @@ class EventRelay:
             try:
                 with self._lock:
                     self._events.append(event)
+                    subscribers = tuple(self._subscribers)
+                for subscriber in subscribers:
+                    subscriber.put_nowait(event)
                 return event
             except Exception as error:  # pragma: no cover - defensive boundary
                 if attempt < PUBLISH_ATTEMPTS:
@@ -90,11 +101,42 @@ class EventRelay:
         with self._lock:
             self._events.clear()
 
+    def subscribe(self) -> Queue[Event]:
+        subscriber: Queue[Event] = Queue()
+        with self._lock:
+            self._subscribers.add(subscriber)
+        return subscriber
+
+    def unsubscribe(self, subscriber: Queue[Event]) -> None:
+        with self._lock:
+            self._subscribers.discard(subscriber)
+
 
 relay = EventRelay()
 
 
 def publish(**kwargs: Any) -> Event | None:
+    relay_url = os.getenv("AUTODECK_RELAY_URL", "http://127.0.0.1:8005")
+    if relay_url:
+        error: Exception | None = None
+        for attempt in range(1, PUBLISH_ATTEMPTS + 1):
+            try:
+                response = httpx.post(
+                    f"{relay_url.rstrip('/')}/events",
+                    json={key: value for key, value in kwargs.items()},
+                    timeout=0.75,
+                )
+                response.raise_for_status()
+                return Event(**response.json())
+            except (httpx.HTTPError, TypeError, ValueError) as caught:
+                error = caught
+                if attempt < PUBLISH_ATTEMPTS:
+                    time.sleep(PUBLISH_RETRY_DELAY)
+        logger.warning(
+            "Remote relay unavailable; using local event store attempts=%s error_type=%s",
+            PUBLISH_ATTEMPTS,
+            error.__class__.__name__ if error else "unknown",
+        )
     return relay.publish(**kwargs)
 
 

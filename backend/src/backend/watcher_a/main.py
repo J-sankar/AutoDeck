@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import fcntl
 import logging
 import os
 import signal
@@ -13,6 +14,7 @@ from pathlib import Path
 from threading import Event
 from typing import Any
 
+from dotenv import load_dotenv
 import httpx
 
 from backend.relay import publish
@@ -20,6 +22,19 @@ from backend.relay import publish
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = BACKEND_ROOT / "src" / "backend" / "manifests" / "services.json"
 logger = logging.getLogger(__name__)
+WATCHER_LOCK_PATH = BACKEND_ROOT / ".watcher_a.lock"
+
+load_dotenv()
+
+
+def acquire_watcher_lock() -> Any:
+    lock_file = WATCHER_LOCK_PATH.open("w")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        lock_file.close()
+        raise RuntimeError("Watcher A is already running") from error
+    return lock_file
 
 
 @dataclass
@@ -63,6 +78,12 @@ class Watcher:
             text=True,
         )
         return "uvicorn" in result.stdout and entrypoint in result.stdout
+
+    def _belongs_to_process_group(self, pid: int, process: subprocess.Popen[str]) -> bool:
+        try:
+            return os.getpgid(pid) == process.pid
+        except ProcessLookupError:
+            return False
 
     def _wait_for_port_free(self, port: int, deadline: float) -> bool:
         while time.monotonic() < deadline:
@@ -132,6 +153,7 @@ class Watcher:
             cwd=BACKEND_ROOT,
             env=os.environ.copy(),
             text=True,
+            start_new_session=True,
         )
         logger.info("Service process started service=%s pid=%s", name, process.pid)
         publish(
@@ -153,7 +175,13 @@ class Watcher:
                     metadata={"port": port, "exit_code": process.returncode},
                 )
                 return False
-            if self.check_health(service):
+            listener_pids = self._listener_pids(port)
+            owns_listener = any(
+                self._belongs_to_process_group(pid, process)
+                and self._is_registered_process(pid, entrypoint)
+                for pid in listener_pids
+            )
+            if self.check_health(service) and owns_listener:
                 logger.info("Service recovered service=%s pid=%s", name, process.pid)
                 publish(
                     type="service_recovered",
@@ -163,6 +191,12 @@ class Watcher:
                     metadata={"port": port, "pid": process.pid},
                 )
                 return True
+            if self.check_health(service) and listener_pids:
+                logger.warning(
+                    "Recovery health response came from another process service=%s listener_pids=%s",
+                    name,
+                    listener_pids,
+                )
             time.sleep(0.2)
 
         process.terminate()
@@ -226,12 +260,20 @@ def load_services() -> list[dict[str, Any]]:
 
 
 def main() -> None:
+    try:
+        lock_file = acquire_watcher_lock()
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from error
+
     logging.basicConfig(
         level=os.getenv("AUTODECK_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    Watcher(load_services()).run()
+    try:
+        Watcher(load_services()).run()
+    finally:
+        lock_file.close()
 
 
 if __name__ == "__main__":
