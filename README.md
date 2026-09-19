@@ -1,147 +1,189 @@
 # AutoDeck
 
-AutoDeck is a hackathon-style project for demonstrating a self-healing service dashboard. The goal is to simulate a small distributed system where service health, error events, and recovery workflows are visible in a live UI.
+AutoDeck is a small self-healing service demo. It contains a Python service chain, a deterministic recovery agent, and a React/Vite dashboard scaffold.
 
-The project is intentionally split into two parts:
-- a Python backend for orchestration, event flow, and service simulation
-- a React + Vite dashboard for visualizing topology, events, and recovery actions
+The current service flow is:
 
-## Project goal
+```text
+Gateway (8001) -> Orders (8002) -> Inventory (8003)
+                              |
+                              v
+                        Payment (8004)
+```
 
-The core concept is simple:
-- detect unhealthy or failed services
-- diagnose application-level errors
-- recover automatically through a controlled workflow
-- surface the full process in a dashboard for demonstration and debugging
+## Current implementation
 
-This project is designed as a demo for ideas around:
-- process-level self-healing
-- AI-assisted diagnosis with deterministic execution
-- event-driven service topology
-- simple observability dashboards
+Implemented:
 
-## Current repo status
+- four FastAPI services: Gateway, Orders, Inventory, and Payment
+- `/health` endpoints for every service
+- Gateway-to-Orders request forwarding
+- Orders-to-Inventory stock checks
+- Orders-to-Payment authorization
+- service manifest at `backend/src/backend/manifests/services.json`
+- deterministic diagnosis and source patching
+- recovery restart logic in `backend/src/backend/agent/recovery.py`
+- `python-dotenv` support for local configuration
+- React 19 + Vite dashboard scaffold
 
-This workspace is currently scaffolded, but the full backend logic and service mesh are still under construction.
-
-The repository already contains:
-- a Python backend package initialized with uv
-- a React/Vite frontend dashboard
-- the project-level README and junior structure for expanding the system
-
-The repository is not yet a complete running distributed system; it is a strong foundation for building one.
+The dashboard is still the default Vite interface. Live topology, event streaming, and recovery controls are planned next.
 
 ## Repository structure
 
 ```text
 AutoDeck/
+├── README.md
+├── CONTEXT.md
+├── .gitignore
 ├── backend/
 │   ├── pyproject.toml
-│   ├── README.md
-│   └── src/
-│       └── backend/
-│           └── __init__.py
-├── dashboard/
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── index.html
-│   ├── public/
-│   └── src/
-│       ├── App.jsx
-│       ├── App.css
-│       ├── index.css
-│       └── main.jsx
-├── README.md
-└── .gitignore
+│   ├── uv.lock
+│   ├── .python-version
+│   ├── .env                 # local only, ignored by Git
+│   └── src/backend/
+│       ├── agent/
+│       │   ├── diagnosis.py
+│       │   ├── patch.py
+│       │   └── recovery.py
+│       ├── manifests/services.json
+│       ├── services/
+│       │   ├── gateway/main.py
+│       │   ├── orders/main.py
+│       │   ├── inventory/main.py
+│       │   └── payment/main.py
+│       ├── tools/validate_manifest.py
+│       └── watcher_a/main.py
+└── dashboard/
+    ├── package.json
+    ├── package-lock.json
+    └── src/
 ```
 
-## Architecture direction
+Generated files such as `.venv/`, `__pycache__/`, `node_modules/`, build output, and `.env` files are ignored by Git.
 
-The intended architecture is:
+## Requirements
 
-```text
-Dashboard (React/Vite)
-        |
-        | WebSocket / event stream
-        v
-Relay / event bus
-        |
-   +----+----+
-   |         |
-   v         v
-Services   Watchers
-(gateway)  (process + diagnosis)
-```
-
-The long-term behavior is expected to include:
-- service registration on startup
-- heartbeat monitoring
-- automatic restart of failed processes
-- simulated application errors
-- diagnosis workflow based on structured decisions
-- deterministic source-code patching or recovery logic
-- live topology and event updates in the dashboard
-
-## Planned backend components
-
-The system is intended to include a small service mesh such as:
-- Gateway service
-- Orders service
-- Inventory service
-- Relay/event transport
-- Watcher A for process recovery
-- Watcher B for diagnosis and repair flow
-
-The project aims to stay simple and hackathon-friendly rather than building a large production system.
-
-## Planned dashboard features
-
-The dashboard should eventually provide:
-- service topology view
-- health and state indicators
-- live event timeline
-- failure injection controls
-- process restart/recovery visibility
-
-## Tech stack
-
-### Backend
 - Python 3.11+
-- uv for dependency management
-- FastAPI (planned)
-- WebSockets / event stream (planned)
-- AI-assisted diagnosis logic (planned)
-- deterministic repair tooling (planned)
-
-### Frontend
-- React
-- Vite
-- ESLint
-
-## Prerequisites
-
-Before starting development, install:
-- Python 3.11+
-- uv
+- [uv](https://docs.astral.sh/uv/)
 - Node.js 18+
 - npm
 
-## Getting started
+## Backend setup
 
-### 1) Set up the backend
-
-From the project root:
+From the repository root:
 
 ```bash
 cd backend
 uv sync
 ```
 
-The backend package is currently a scaffold, so additional service modules and runtime entrypoints will be added as the app evolves.
+The backend dependencies are defined in `backend/pyproject.toml`, including FastAPI, Uvicorn, OpenAI, and `python-dotenv`.
 
-### 2) Set up the dashboard
+## Environment configuration
 
-From the project root:
+Create `backend/.env` for local service URLs:
+
+```env
+ORDERS_URL=http://127.0.0.1:8002
+INVENTORY_URL=http://127.0.0.1:8003
+PAYMENT_URL=http://127.0.0.1:8004
+AUTODECK_AGENT_MODE=deterministic
+AUTODECK_LOG_LEVEL=INFO
+```
+
+For OpenAI diagnosis mode, also configure:
+
+```env
+AUTODECK_AGENT_MODE=openai
+OPENAI_API_KEY=your-key-here
+OPENAI_MODEL=your-model-name
+```
+
+Do not commit `.env` or API keys. The service modules call `load_dotenv()` and use shell environment variables when they are already set.
+
+## Run the services
+
+Open four terminals. Run every command from the `backend/` directory.
+
+### Inventory
+
+```bash
+uv run uvicorn backend.services.inventory.main:app --host 127.0.0.1 --port 8003
+```
+
+### Payment
+
+```bash
+uv run uvicorn backend.services.payment.main:app --host 127.0.0.1 --port 8004
+```
+
+### Orders
+
+```bash
+uv run uvicorn backend.services.orders.main:app --host 127.0.0.1 --port 8002
+```
+
+### Gateway
+
+```bash
+uv run uvicorn backend.services.gateway.main:app --host 127.0.0.1 --port 8001
+```
+
+Start Inventory and Payment before Orders, and Orders before Gateway. Do not use `gateway:main`; Uvicorn needs the full import target ending in `:app`.
+
+## Check service health
+
+```bash
+curl http://127.0.0.1:8001/health
+curl http://127.0.0.1:8002/health
+curl http://127.0.0.1:8003/health
+curl http://127.0.0.1:8004/health
+```
+
+Each service should return a healthy status response.
+
+## Send a test order
+
+```bash
+curl -X POST http://127.0.0.1:8001/orders \
+  -H "content-type: application/json" \
+  -d '{"item_id":"widget","quantity":2}'
+```
+
+A successful response travels through Gateway, Orders, Inventory, and Payment.
+
+## Run the recovery agent
+
+The recovery CLI currently supports the Orders repair flow. Run it from `backend/`:
+
+```bash
+uv run python -m backend.agent.recovery \
+  --service orders \
+  --status-code 409 \
+  --detail "insufficient inventory" \
+  --request-json '{"item_id":"widget","quantity":10}'
+```
+
+The workflow:
+
+1. reads the service manifest
+2. diagnoses the known Orders failure
+3. validates and applies an approved source replacement
+4. stops the process listening on port `8002`
+5. restarts Orders
+6. waits for its health endpoint
+
+The deterministic repair is approved only when the known seeded comparison is present. If the source is already repaired, the command correctly reports that no approved repair is available.
+
+## Validate the manifest
+
+```bash
+uv run python -m backend.tools.validate_manifest
+```
+
+## Dashboard
+
+From the repository root:
 
 ```bash
 cd dashboard
@@ -149,265 +191,26 @@ npm install
 npm run dev
 ```
 
-This starts the Vite development server for the frontend UI.
-
-### 3) Run the backend application
-
-Once the backend service entrypoints are implemented, the app can be launched with:
+Other frontend commands:
 
 ```bash
-cd backend
-uv run python -m backend
+npm run build
+npm run lint
+npm run preview
 ```
 
-If the project later grows into dedicated service modules, the runtime commands will be updated to match the concrete app structure.
+## Design principles
 
-## Development notes
+- Keep service recovery deterministic and observable.
+- Let diagnosis produce a structured decision rather than arbitrary file edits.
+- Validate patch targets against the service manifest.
+- Keep the dashboard independent from backend recovery internals.
+- Build the live dashboard only after the service and recovery paths are reliable.
 
-A few important design principles for this project:
+## Next steps
 
-- keep the event model small and explicit
-- prefer deterministic recovery steps over arbitrary file editing
-- separate AI judgment from code execution
-- build telemetry and topology from observed runtime behavior
-
-This makes the demo easier to reason about and more convincing as a self-healing system.
-
-## Recommended next steps
-
-1. scaffold backend service modules and event bus
-2. implement service registration and heartbeat flow
-3. add simple failure injection for a service
-4. build the dashboard topology and log timeline
-5. add a deterministic diagnosis/recovery workflow
-6. connect live events from backend to frontend
-
-## Summary
-
-AutoDeck is a lightweight, demo-oriented project for exploring self-healing service patterns in a small distributed system. It currently exists as a solid scaffold for both the backend and frontend, with the architecture and workflow intentionally designed for a future live demonstration.
-
-This README will continue to be refined as the backend services, event model, and recovery logic are implemented.
-
-       ↓
-5. Generate normal traffic
-       ↓
-6. Dashboard shows live calls
-       ↓
-7. Kill a service
-       ↓
-8. Watcher A detects it
-       ↓
-9. Watcher A respawns it
-       ↓
-10. Health verification succeeds
-       ↓
-11. Inject application bug
-       ↓
-12. Request fails
-       ↓
-13. Watcher B receives error
-       ↓
-14. Agent analyzes failure
-       ↓
-15. Structured diagnosis returned
-       ↓
-16. Deterministic patch applied
-       ↓
-17. Service restarted
-       ↓
-18. Original request replayed
-       ↓
-19. Verification succeeds
-       ↓
-20. Dashboard shows complete recovery trace
-This sequence is the main hackathon story.
-17. Build Order
-Implement in this exact order initially.
-Phase 1 — Foundation
-- Create repository
-- Create backend/
-- Initialize uv
-- Create dashboard/
-- Initialize React/Vite
-- Create shared configuration
-Phase 2 — Services
-- Gateway service
-- Orders service
-- Inventory service
-- Health endpoints
-- Service registration
-- Inter-service requests
-- Seeded application bug
-Phase 3 — Process Recovery
-- Heartbeat system
-- Watcher A
-- Process spawning
-- Process termination detection
-- Respawn
-- Recovery verification
-Phase 4 — Relay
-- Event model
-- WebSocket relay
-- Backend event publishing
-- Dashboard WebSocket client
-Phase 5 — Dashboard
-- Service list
-- Health state
-- Topology graph
-- Event stream
-- Kill Service button
-- Inject Bug button
-Phase 6 — Static Analysis
-- Manifest extractor
-- Function discovery
-- Route discovery
-- Dependency classification
-Phase 7 — AI Diagnosis
-- Error context collection
-- Agent prompt
-- Structured agent response
-- Diagnosis display
-Phase 8 — Deterministic Patching
-- Patch validation
-- Patch application
-- Service restart
-- Original request replay
-- Verification
-Phase 9 — Demo Polish
-- Recovery animations
-- Diagnosis trace
-- Failure states
-- Clear status indicators
-- One-command startup
-- Reliable demo reset
-18. Time-Constrained Fallback Plan
-If hackathon time becomes limited, prioritize functionality over UI polish.
-Fallback order:
-1. Watcher A heartbeat/respawn
-2. Watcher B diagnosis + one patch round
-3. Live reasoning/diagnosis trace
-4. Simple dashboard status list
-5. Full topology graph
-6. Dynamic topology discovery
-7. Auto-instrumentation
-8. Advanced dependency classification
-The minimum viable demonstration should be:
-Service dies
-    ↓
-Watcher detects it
-    ↓
-Service automatically restarts
-    ↓
-Recovery is verified
-    ↓
-Dashboard shows the recovery
-Then, if possible, add:
-Application bug
-    ↓
-AI diagnosis
-    ↓
-Deterministic patch
-    ↓
-Restart
-    ↓
-Replay
-    ↓
-Verified recovery
-19. Development Principles
-Keep components independently runnable
-The dashboard should still be usable if advanced AI diagnosis is unavailable.
-Watcher A should work without Watcher B.
-Static analysis should work without the dashboard.
-The relay should not contain application-specific recovery logic.
-Prefer deterministic infrastructure
-Use normal code for:
-- health checks
-- process management
-- validation
-- patch application
-- event serialization
-- service registration
-- request replay
-Use AI primarily for:
-- diagnosis
-- selecting relevant code
-- explaining likely root cause
-- deciding what deterministic operation should be performed
-Optimize for a live demo
-Every major feature should be demonstrable in seconds.
-Avoid features that require complicated manual setup during the presentation.
-20. Initial Commands
-At repository root:
-mkdir self-healing-dashboard
-cd self-healing-dashboard
-
-mkdir backend dashboard
-Initialize backend:
-cd backend
-uv init
-Return to root:
-cd ..
-The frontend can later be initialized separately with Vite.
-21. Current Implementation Status
-At the beginning of implementation:
-Architecture:             Defined
-Repository structure:     Defined
-README/context:           Defined
-
-Services:                 Not implemented
-Relay:                    Not implemented
-Watcher A:                Not implemented
-Watcher B:                Not implemented
-Agent:                    Not implemented
-Static analysis:          Not implemented in Python version
-Instrumentation:          Not implemented
-Dashboard:                Not implemented
-The project should now move from architecture into implementation.
-22. Important Constraint
-Do not prematurely implement every component.
-Build vertically and verify each stage.
-Preferred progression:
-Gateway
-  ↓
-Orders
-  ↓
-Inventory
-  ↓
-Health
-  ↓
-Registration
-  ↓
-Heartbeat
-  ↓
-Watcher A
-  ↓
-Relay
-  ↓
-Dashboard
-  ↓
-Failure injection
-  ↓
-Watcher B
-  ↓
-AI diagnosis
-  ↓
-Patch
-  ↓
-Verification
-Each stage should work before moving to the next.
-23. Reference Design Decisions
-The original project design establishes these important principles:
-- Services self-register.
-- The graph should reflect observed behavior.
-- Two independent watchers handle process and application failures.
-- The AI agent provides judgment.
-- Deterministic tools perform source manipulation.
-- Components should degrade gracefully.
-- A working recovery loop is more important than a large collection of unfinished features.
-These principles should remain stable while implementation details evolve.
-24. Current Goal
-The immediate goal is not to build the complete dashboard.
-The immediate goal is:
-Create the Python uv backend, implement three independently running services, establish health endpoints and inter-service communication, and introduce one deterministic seeded application failure.
-
-Once that works, implement Watcher A and build upward from there.
+1. Add live service events and a relay/WebSocket endpoint.
+2. Connect the dashboard to service health and recovery events.
+3. Expand `watcher_a` into heartbeat-based process monitoring.
+4. Add replay verification to the recovery workflow.
+5. Replace the starter dashboard with the service topology UI.
