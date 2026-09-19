@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException
 
-
 app = FastAPI(title="AutoDeck Inventory")
 
 _inventory = {

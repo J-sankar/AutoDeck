@@ -4,7 +4,6 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-
 app = FastAPI(title="AutoDeck Gateway")
 ORDERS_URL = os.getenv("ORDERS_URL", "http://127.0.0.1:8002")
 

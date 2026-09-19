@@ -4,7 +4,6 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-
 app = FastAPI(title="AutoDeck Orders")
 INVENTORY_URL = os.getenv("INVENTORY_URL", "http://127.0.0.1:8003")
 PAYMENT_URL = os.getenv("PAYMENT_URL", "http://127.0.0.1:8004")
