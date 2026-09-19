@@ -83,16 +83,23 @@ def publish_event(event: EventRequest) -> dict[str, Any]:
 
 async def stream_events(request: Request) -> AsyncIterator[str]:
     subscriber: Queue[Event] = relay.subscribe()
+    yield ": connected\n\n"
+    last_keepalive = asyncio.get_running_loop().time()
     try:
         while True:
             if await request.is_disconnected():
                 return
-            try:
-                event = await asyncio.to_thread(subscriber.get, True, 15)
-            except Empty:
+            while True:
+                try:
+                    event = subscriber.get_nowait()
+                except Empty:
+                    break
+                yield f"data: {json.dumps(event.to_dict())}\n\n"
+                last_keepalive = asyncio.get_running_loop().time()
+            if asyncio.get_running_loop().time() - last_keepalive >= 15:
                 yield ": keepalive\n\n"
-                continue
-            yield f"data: {json.dumps(event.to_dict())}\n\n"
+                last_keepalive = asyncio.get_running_loop().time()
+            await asyncio.sleep(0.5)
     finally:
         relay.unsubscribe(subscriber)
 
@@ -104,3 +111,7 @@ async def event_stream(request: Request) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
+
+@app.get("/health")
+def get_health():
+    return {"status":"healthy"}

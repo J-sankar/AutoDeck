@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from .diagnosis import diagnose_failure
+from .diagnosis import DiagnosisResult, diagnose_failure
 from .patch import BACKEND_ROOT, PatchDecision, apply_patch
 from backend.relay import publish
 
@@ -135,26 +135,28 @@ def repair_orders(
     status_code: int,
     detail: str,
     request: dict[str, Any] | None = None,
+    diagnosis: DiagnosisResult | None = None,
 ) -> tuple[PatchDecision, subprocess.Popen[str]]:
     logger.info("Recovery started service=orders status_code=%s", status_code)
     service_entry = _service("orders")
     source_path = BACKEND_ROOT / "src" / "backend" / "services" / "orders" / "main.py"
     source = source_path.read_text(encoding="utf-8")
-    diagnosis = diagnose_failure(
-        "orders",
-        status_code,
-        detail,
-        source,
-        service_entry=service_entry,
-        request=request,
-    )
-    publish(
-        type="agent_diagnosis",
-        service="orders",
-        status=diagnosis.action,
-        message=diagnosis.reason,
-        metadata={"status_code": status_code, "detail": detail},
-    )
+    if diagnosis is None:
+        diagnosis = diagnose_failure(
+            "orders",
+            status_code,
+            detail,
+            source,
+            service_entry=service_entry,
+            request=request,
+        )
+        publish(
+            type="agent_diagnosis",
+            service="orders",
+            status=diagnosis.action,
+            message=diagnosis.reason,
+            metadata={"status_code": status_code, "detail": detail},
+        )
     diagnosed = diagnosis.patch
     if diagnosed is None:
         logger.warning("Recovery aborted service=orders reason=no_repair")
