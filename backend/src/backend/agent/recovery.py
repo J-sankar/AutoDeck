@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
 import signal
 import subprocess
 import time
-import argparse
 from typing import Any
 
 import httpx
 
 from .diagnosis import diagnose_failure
 from .patch import BACKEND_ROOT, PatchDecision, apply_patch
+from backend.relay import publish
 
 MANIFEST_PATH = BACKEND_ROOT / "src" / "backend" / "manifests" / "services.json"
 logger = logging.getLogger(__name__)
@@ -47,6 +48,13 @@ def restart_service(service_name: str, timeout: float = 10.0) -> subprocess.Pope
     service = _service(service_name)
     port = service["port"]
     logger.info("Service restart started service=%s port=%s", service_name, port)
+    publish(
+        type="restart_requested",
+        service=service_name,
+        status="recovering",
+        message="Service restart requested after an approved patch.",
+        metadata={"port": port},
+    )
     for pid in _listening_pids(port):
         logger.info("Service stop requested service=%s port=%s pid=%s", service_name, port, pid)
         os.kill(pid, signal.SIGTERM)
@@ -56,6 +64,13 @@ def restart_service(service_name: str, timeout: float = 10.0) -> subprocess.Pope
         time.sleep(0.1)
 
     if _listening_pids(port):
+        publish(
+            type="recovery_failed",
+            service=service_name,
+            status="failed",
+            message="The service did not stop before restart.",
+            metadata={"port": port},
+        )
         raise RuntimeError(f"service {service_name} did not stop on port {port}")
 
     process = subprocess.Popen(
@@ -72,19 +87,47 @@ def restart_service(service_name: str, timeout: float = 10.0) -> subprocess.Pope
         cwd=BACKEND_ROOT,
         text=True,
     )
+    publish(
+        type="service_started",
+        service=service_name,
+        status="starting",
+        message="Service process started after patch application.",
+        metadata={"port": port, "pid": process.pid},
+    )
     health_url = f"http://127.0.0.1:{port}{service['health']}"
     with httpx.Client(timeout=1.0) as client:
         while time.monotonic() < deadline:
             if process.poll() is not None:
+                publish(
+                    type="recovery_failed",
+                    service=service_name,
+                    status="failed",
+                    message="The restarted service exited before becoming healthy.",
+                    metadata={"port": port, "exit_code": process.returncode},
+                )
                 raise RuntimeError(f"service {service_name} exited with code {process.returncode}")
             try:
                 if client.get(health_url).is_success:
                     logger.info("Service healthy service=%s port=%s pid=%s", service_name, port, process.pid)
+                    publish(
+                        type="service_recovered",
+                        service=service_name,
+                        status="healthy",
+                        message="Service health recovered after patch restart.",
+                        metadata={"port": port, "pid": process.pid},
+                    )
                     return process
             except httpx.HTTPError:
                 pass
             time.sleep(0.2)
     process.terminate()
+    publish(
+        type="recovery_failed",
+        service=service_name,
+        status="failed",
+        message="The restarted service did not become healthy before timeout.",
+        metadata={"port": port},
+    )
     raise RuntimeError(f"service {service_name} did not become healthy")
 
 
@@ -105,9 +148,23 @@ def repair_orders(
         service_entry=service_entry,
         request=request,
     )
+    publish(
+        type="agent_diagnosis",
+        service="orders",
+        status=diagnosis.action,
+        message=diagnosis.reason,
+        metadata={"status_code": status_code, "detail": detail},
+    )
     diagnosed = diagnosis.patch
     if diagnosed is None:
         logger.warning("Recovery aborted service=orders reason=no_repair")
+        publish(
+            type="patch_rejected",
+            service="orders",
+            status="rejected",
+            message="Diagnosis did not approve a repair patch.",
+            metadata={"reason": diagnosis.reason},
+        )
         raise ValueError("no approved repair for the observed Orders failure")
 
     result = apply_patch(diagnosed)
@@ -124,6 +181,7 @@ def main() -> None:
         level=os.getenv("AUTODECK_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     parser = argparse.ArgumentParser(description="Diagnose and repair a service failure")
     parser.add_argument("--service", required=True)
     parser.add_argument("--status-code", required=True, type=int)

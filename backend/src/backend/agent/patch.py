@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from backend.relay import publish
+
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 SOURCE_ROOT = BACKEND_ROOT / "src" / "backend"
 MANIFEST_PATH = SOURCE_ROOT / "manifests" / "services.json"
@@ -71,12 +73,29 @@ def _resolve_target(decision: PatchDecision) -> Path:
 
 
 def apply_patch(decision: PatchDecision) -> PatchResult:
-    target = _resolve_target(decision)
+    try:
+        target = _resolve_target(decision)
+    except (ValueError, OSError) as error:
+        publish(
+            type="patch_rejected",
+            service=decision.service,
+            status="rejected",
+            message="Patch target was rejected by the safety boundary.",
+            metadata={"file": decision.file, "error_type": type(error).__name__},
+        )
+        raise
     logger.info("Patch started service=%s file=%s", decision.service, target)
     original = target.read_text(encoding="utf-8")
     occurrences = original.count(decision.expected_text)
     if occurrences != 1:
         logger.warning("Patch rejected service=%s file=%s reason=match_count", decision.service, target)
+        publish(
+            type="patch_rejected",
+            service=decision.service,
+            status="rejected",
+            message="Patch expected text did not match exactly once.",
+            metadata={"file": str(target), "match_count": occurrences},
+        )
         raise ValueError(f"expected text must occur exactly once; found {occurrences}")
 
     updated = original.replace(decision.expected_text, decision.replacement_text, 1)
@@ -86,6 +105,20 @@ def apply_patch(decision: PatchDecision) -> PatchResult:
         compile(updated, str(target), "exec")
     except SyntaxError:
         logger.error("Patch validation failed service=%s file=%s", decision.service, target)
+        publish(
+            type="patch_rejected",
+            service=decision.service,
+            status="rejected",
+            message="Patched source failed Python compilation.",
+            metadata={"file": str(target)},
+        )
         return PatchResult(False, str(target), "patch applied but resulting source does not compile")
     logger.info("Patch applied service=%s file=%s", decision.service, target)
+    publish(
+        type="patch_applied",
+        service=decision.service,
+        status="applied",
+        message="Approved source patch was applied and compiled.",
+        metadata={"file": str(target)},
+    )
     return PatchResult(True, str(target), "patch applied and source compiled successfully")
