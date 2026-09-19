@@ -1,8 +1,11 @@
 import os
 
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+load_dotenv()
 
 app = FastAPI(title="AutoDeck Gateway")
 ORDERS_URL = os.getenv("ORDERS_URL", "http://127.0.0.1:8002")

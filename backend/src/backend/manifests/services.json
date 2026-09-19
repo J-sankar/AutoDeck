@@ -1,0 +1,36 @@
+{
+  "services": [
+    {
+      "name": "gateway",
+      "entrypoint": "backend.services.gateway.main:app",
+      "port": 8001,
+      "health": "/health",
+      "endpoints": ["/orders"],
+      "depends_on": ["orders"]
+    },
+    {
+      "name": "orders",
+      "entrypoint": "backend.services.orders.main:app",
+      "port": 8002,
+      "health": "/health",
+      "endpoints": ["/orders"],
+      "depends_on": ["inventory", "payment"]
+    },
+    {
+      "name": "inventory",
+      "entrypoint": "backend.services.inventory.main:app",
+      "port": 8003,
+      "health": "/health",
+      "endpoints": ["/inventory/{item_id}"],
+      "depends_on": []
+    },
+    {
+      "name": "payment",
+      "entrypoint": "backend.services.payment.main:app",
+      "port": 8004,
+      "health": "/health",
+      "endpoints": ["/payments"],
+      "depends_on": []
+    }
+  ]
+}
