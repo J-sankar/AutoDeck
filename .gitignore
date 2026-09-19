@@ -29,10 +29,13 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+.watcher_a.lock
 
 # Editors and operating-system files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/keybindings.json
 .idea/
 .DS_Store
 *.swp
