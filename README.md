@@ -62,36 +62,22 @@ Watcher A handles process and health recovery. Watcher B handles application-fai
 ## Features
 
 - Four independently runnable FastAPI services: Gateway, Orders, Inventory, and Payment.
-- Manifest-driven service registry at `backend/src/backend/manifests/services.json`.
-- Tree-sitter source inspection that records registered service functions before telemetry planning.
-- Validated, idempotent telemetry decorators for approved endpoint functions.
-- Runtime request, health, failure, recovery, and dependency-edge events.
-- Thread-safe in-memory relay with HTTP APIs and Server-Sent Events (SSE).
-- Live React Flow and dagre topology graph with planned and observed edges.
-- Green, amber, and red incident states for healthy, recovering, and failed paths.
-- Watcher A with two-failure health thresholds and manifest-based process restart.
-- Watcher B with SSE consumption, single-flight repair per service, and diagnose-only default behavior.
-- Optional OpenAI diagnosis with deterministic fallback when credentials or model output are unavailable.
-- Safe patch executor limited to registered service files and exact approved replacements.
-- Automatic Orders restart, health verification, and one replay of the original Gateway request.
-- Direct `uv run` commands for starting the relay, control plane, services, and watchers.
-- Technical dashboard view for raw events, service metadata, and recovery history.
+- Manifest-driven service registry and telemetry setup.
+- Relay API with event history, SSE streaming, and topology data.
+- Watcher A for health monitoring and process recovery.
+- Watcher B for application-failure diagnosis and controlled repair.
+- React dashboard for service health, topology, and recovery events.
 
 ## Tech Stack
 
-- **Frontend:** React 19, Vite, React Flow (`@xyflow/react`), dagre, CSS
-- **Backend:** Python 3.11+, FastAPI, Uvicorn, httpx, Pydantic, `uv`
-- **Database:** None in this demo; relay events are kept in a bounded in-memory store
-- **APIs / Services:** Local FastAPI services, relay HTTP/SSE API, OpenAI Responses API (optional), Tree-sitter Python parser
-- **Hosting / Deployment:** Local development processes only; no public deployment is currently configured
-- **Other Tools:** Codex, standard Python logging, `python-dotenv`, Git
+- **Frontend:** React 19, Vite, React Flow, dagre, CSS
+- **Backend:** Python 3.11+, FastAPI, Uvicorn, httpx, Pydantic, uv
+- **Database:** None; relay events use a bounded in-memory store
+- **APIs / Services:** Local FastAPI services, relay HTTP/SSE API, optional OpenAI Responses API
+- **Hosting / Deployment:** Local development; no public deployment currently configured
+- **Other Tools:** Codex, `python-dotenv`, Tree-sitter, Git
 
 ## Architecture
-
-```text
-                         +----------------------+
-                         | Dashboard :5173      |
-                         | topology + SSE       |
                          +----------+-----------+
                                     |
                                     v
@@ -127,17 +113,13 @@ The OpenAI diagnosis agent does not receive arbitrary repository access and does
 
 ## Demo
 
-### Live Demo
 
-No public deployment is currently available. The project runs as a local demo using the commands in [How to Run Locally](#how-to-run-locally).
 
 ### Demo / Pitch Video
 
-Add the final demo or pitch video link here before submission:
 
-```text
-<demo-video-link>
-```
+https://drive.google.com/file/d/1S16DDdc3gXD-Y97rSO-W1XOMTjCe78Bf/view?usp=drivesdk
+
 
 Recommended demo sequence:
 
@@ -151,6 +133,24 @@ Recommended demo sequence:
 
 ## Screenshots
 
+### Dashboard screenshots
+
+The following screenshots show the AutoDeck dashboard and recovery workflow:
+
+![AutoDeck screenshot 1](screenshots/ss1.png)
+
+![AutoDeck screenshot 2](screenshots/ss2.png)
+
+![AutoDeck screenshot 3](screenshots/ss3.png)
+
+![AutoDeck screenshot 4](screenshots/ss4.png)
+
+![AutoDeck screenshot 5](screenshots/ss5.png)
+
+![AutoDeck screenshot 6](screenshots/ss6.png)
+
+![AutoDeck screenshot 7](screenshots/ss7.png)
+
 The dashboard includes:
 
 - A live Gateway -> Orders -> Inventory/Payment topology graph.
@@ -159,15 +159,6 @@ The dashboard includes:
 - An expandable technical panel containing service registry details and the raw SSE event timeline.
 - A topology instrumentation action backed by the control plane on port `8000`.
 
-Add committed screenshots here before publishing the final hackathon submission:
-
-```text
-screenshots/dashboard-healthy.png
-screenshots/dashboard-recovery.png
-screenshots/dashboard-technical-events.png
-```
-
-The screenshots currently used during development are local clipboard captures and are not treated as repository assets.
 
 ## How to Run Locally
 
