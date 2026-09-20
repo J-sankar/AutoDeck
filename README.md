@@ -92,7 +92,7 @@ Relay :8005       event stream and topology API
 Control :8000     registry and telemetry setup API
 Watcher A         process and health recovery
 Watcher B         application failure diagnosis and repair
-```
+
 
 The canonical Python package is under `backend/src/backend/`. No duplicate backend package is required or supported outside that `src` layout.
 
@@ -110,9 +110,6 @@ Codex and OpenAI tools were used throughout the build for:
 - Writing local runtime commands, testing instructions, troubleshooting guidance, and this documentation.
 
 The OpenAI diagnosis agent does not receive arbitrary repository access and does not execute commands. It receives the registered service context, the observed failure, the affected source file, and the original validated request fields. It can return `patch` or `no_repair`; local code decides whether a patch is safe to apply.
-
-## Demo
-
 
 
 ### Demo / Pitch Video
@@ -132,10 +129,6 @@ Recommended demo sequence:
 7. Submit an unsupported `missing-item` request and show that it remains unrepaired rather than receiving an unsafe patch.
 
 ## Screenshots
-
-### Dashboard screenshots
-
-The following screenshots show the AutoDeck dashboard and recovery workflow:
 
 ![AutoDeck screenshot 1](screenshots/ss1.png)
 
