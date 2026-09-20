@@ -11,6 +11,8 @@ dependencies = [
     "fastapi[standard]>=0.141.1",
     "openai>=1.0.0",
     "python-dotenv>=1.2.3",
+    "tree-sitter>=0.25.0",
+    "tree-sitter-python>=0.25.0",
     "uvicorn>=0.53.0",
 ]
 

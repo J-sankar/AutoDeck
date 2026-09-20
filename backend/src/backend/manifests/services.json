@@ -5,32 +5,117 @@
       "entrypoint": "backend.services.gateway.main:app",
       "port": 8001,
       "health": "/health",
-      "endpoints": ["/orders"],
-      "depends_on": ["orders"]
+      "endpoints": [
+        "/orders"
+      ],
+      "depends_on": [
+        "orders"
+      ],
+      "id": "gateway",
+      "source_file": "src/backend/services/gateway/main.py",
+      "functions": [
+        {
+          "id": "gateway.health",
+          "name": "health",
+          "line": 26,
+          "operations": []
+        },
+        {
+          "id": "gateway.forward_order",
+          "name": "forward_order",
+          "line": 32,
+          "operations": [
+            "POST /orders"
+          ]
+        }
+      ]
     },
     {
       "name": "orders",
       "entrypoint": "backend.services.orders.main:app",
       "port": 8002,
       "health": "/health",
-      "endpoints": ["/orders"],
-      "depends_on": ["inventory", "payment"]
+      "endpoints": [
+        "/orders"
+      ],
+      "depends_on": [
+        "inventory",
+        "payment"
+      ],
+      "id": "orders",
+      "source_file": "src/backend/services/orders/main.py",
+      "functions": [
+        {
+          "id": "orders.health",
+          "name": "health",
+          "line": 25,
+          "operations": []
+        },
+        {
+          "id": "orders.create_order",
+          "name": "create_order",
+          "line": 31,
+          "operations": [
+            "POST /orders"
+          ]
+        }
+      ]
     },
     {
       "name": "inventory",
       "entrypoint": "backend.services.inventory.main:app",
       "port": 8003,
       "health": "/health",
-      "endpoints": ["/inventory/{item_id}"],
-      "depends_on": []
+      "endpoints": [
+        "/inventory/{item_id}"
+      ],
+      "depends_on": [],
+      "id": "inventory",
+      "source_file": "src/backend/services/inventory/main.py",
+      "functions": [
+        {
+          "id": "inventory.health",
+          "name": "health",
+          "line": 17,
+          "operations": []
+        },
+        {
+          "id": "inventory.get_inventory",
+          "name": "get_inventory",
+          "line": 23,
+          "operations": [
+            "GET /inventory/{item_id}"
+          ]
+        }
+      ]
     },
     {
       "name": "payment",
       "entrypoint": "backend.services.payment.main:app",
       "port": 8004,
       "health": "/health",
-      "endpoints": ["/payments"],
-      "depends_on": []
+      "endpoints": [
+        "/payments"
+      ],
+      "depends_on": [],
+      "id": "payment",
+      "source_file": "src/backend/services/payment/main.py",
+      "functions": [
+        {
+          "id": "payment.health",
+          "name": "health",
+          "line": 18,
+          "operations": []
+        },
+        {
+          "id": "payment.authorize_payment",
+          "name": "authorize_payment",
+          "line": 24,
+          "operations": [
+            "POST /payments"
+          ]
+        }
+      ]
     }
   ]
 }

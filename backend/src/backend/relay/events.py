@@ -121,6 +121,12 @@ def publish(**kwargs: Any) -> Event | None:
         error: Exception | None = None
         for attempt in range(1, PUBLISH_ATTEMPTS + 1):
             try:
+                logger.debug(
+                    "Remote relay publish attempt=%s event_type=%s service=%s",
+                    attempt,
+                    kwargs.get("type"),
+                    kwargs.get("service"),
+                )
                 response = httpx.post(
                     f"{relay_url.rstrip('/')}/events",
                     json={key: value for key, value in kwargs.items()},
@@ -130,6 +136,12 @@ def publish(**kwargs: Any) -> Event | None:
                 return Event(**response.json())
             except (httpx.HTTPError, TypeError, ValueError) as caught:
                 error = caught
+                logger.warning(
+                    "Remote relay publish attempt failed attempt=%s event_type=%s error_type=%s",
+                    attempt,
+                    kwargs.get("type"),
+                    caught.__class__.__name__,
+                )
                 if attempt < PUBLISH_ATTEMPTS:
                     time.sleep(PUBLISH_RETRY_DELAY)
         logger.warning(

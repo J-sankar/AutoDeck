@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import fcntl
 import logging
 import os
 import threading
@@ -20,7 +21,19 @@ BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = BACKEND_ROOT / "src" / "backend" / "manifests" / "services.json"
 RELAY_URL = os.getenv("AUTODECK_RELAY_URL", "http://127.0.0.1:8005")
 GATEWAY_URL = os.getenv("GATEWAY_URL", "http://127.0.0.1:8001")
+RELAY_READY_TIMEOUT = 10.0
 logger = logging.getLogger(__name__)
+WATCHER_LOCK_PATH = BACKEND_ROOT / ".watcher_b.lock"
+
+
+def acquire_watcher_lock() -> Any:
+    lock_file = WATCHER_LOCK_PATH.open("w")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        lock_file.close()
+        raise RuntimeError("Watcher B is already running") from error
+    return lock_file
 
 
 def load_services() -> dict[str, dict[str, Any]]:
@@ -100,11 +113,19 @@ class WatcherB:
             service=service_entry["name"],
             status=result.action,
             message=result.reason,
-            metadata={"status_code": status_code, "detail": detail},
+            metadata={
+                "status_code": status_code,
+                "detail": detail,
+                "target_service": service_entry["name"],
+                "source_service": event.get("service"),
+            },
         )
         return result
 
-    def _replay(self, request: dict[str, Any]) -> bool:
+    def _replay(self, request: dict[str, Any], target_service: str) -> bool:
+        relay_ready = self._wait_for_relay()
+        if not relay_ready:
+            logger.warning("Relay did not become ready before replay; continuing request replay")
         try:
             with httpx.Client(timeout=5.0) as client:
                 response = client.post(f"{GATEWAY_URL.rstrip('/')}/orders", json=request)
@@ -114,7 +135,12 @@ class WatcherB:
                     service="gateway",
                     status="healthy",
                     message="Original Gateway request succeeded after repair.",
-                    metadata={"request": request, "response": response.json()},
+                    metadata={
+                        "request": request,
+                        "response": response.json(),
+                        "target_service": target_service,
+                        "affected_services": ["gateway", target_service],
+                    },
                 )
                 return True
             publish(
@@ -132,6 +158,21 @@ class WatcherB:
                 message="Original Gateway request could not be replayed.",
                 metadata={"request": request, "error_type": error.__class__.__name__},
             )
+        return False
+
+    def _wait_for_relay(self) -> bool:
+        deadline = time.monotonic() + RELAY_READY_TIMEOUT
+        health_url = f"{RELAY_URL.rstrip('/')}/health"
+        while time.monotonic() < deadline:
+            try:
+                with httpx.Client(timeout=0.75) as client:
+                    response = client.get(health_url)
+                if response.is_success:
+                    logger.info("Relay ready before replay url=%s", health_url)
+                    return True
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.25)
         return False
 
     def handle_event(self, event: dict[str, Any]) -> None:
@@ -161,7 +202,12 @@ class WatcherB:
                     service=service_name,
                     status="rejected",
                     message="No approved repair exists for the observed application failure.",
-                    metadata={"reason": diagnosis.reason},
+                    metadata={
+                        "reason": diagnosis.reason,
+                        "repair_required": False,
+                        "target_service": service_name,
+                        "source_service": event.get("service"),
+                    },
                 )
                 return
             if not self.auto_repair:
@@ -188,7 +234,7 @@ class WatcherB:
             status_code = int(metadata.get("status_code", 500))
             detail = str(metadata.get("detail", event.get("message", "application failure")))
             repair_orders(status_code, detail, request, diagnosis=diagnosis)
-            self._replay(request)
+            self._replay(request, service_name)
         except (OSError, RuntimeError, ValueError, httpx.HTTPError) as error:
             logger.exception("Watcher B recovery failed service=%s", service_name)
             publish(
@@ -222,12 +268,19 @@ class WatcherB:
 
 
 def main() -> None:
+    try:
+        lock_file = acquire_watcher_lock()
+    except RuntimeError as error:
+        raise SystemExit(str(error)) from error
     logging.basicConfig(
         level=os.getenv("AUTODECK_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    WatcherB().run()
+    try:
+        WatcherB().run()
+    finally:
+        lock_file.close()
 
 
 if __name__ == "__main__":

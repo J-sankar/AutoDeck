@@ -1,5 +1,10 @@
+from backend.telemetry import trace_endpoint
+import logging
+
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AutoDeck Payment")
 
@@ -15,7 +20,10 @@ def health() -> dict[str, str]:
 
 
 @app.post("/payments")
+@trace_endpoint(service='payment', operation='POST /payments', targets=())
 def authorize_payment(payment: PaymentRequest) -> dict[str, object]:
+    logger.info("Payment authorization started item_id=%s quantity=%s", payment.item_id, payment.quantity)
+    logger.info("Payment authorization completed item_id=%s", payment.item_id)
     return {
         "status": "authorized",
         "item_id": payment.item_id,

@@ -30,6 +30,9 @@ pnpm-debug.log*
 .env.*
 !.env.example
 .watcher_a.lock
+.watcher_b.lock
+.autodeck-runtime.json
+.autodeck-runtime.lock
 
 # Editors and operating-system files
 .vscode/*

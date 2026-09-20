@@ -1,16 +1,40 @@
-# React + Vite
+# AutoDeck dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The dashboard is a React/Vite client for the AutoDeck relay and control plane. It shows the live service topology, health state, runtime-observed dependency edges, incident highlighting, recovery progress, and an expandable technical event view.
 
-Currently, two official plugins are available:
+## Start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+From this directory:
 
-## React Compiler
+```bash
+npm install
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The development server normally runs on `http://localhost:5173`. Start the backend first from the repository root:
 
-## Expanding the ESLint configuration
+```bash
+make demo-up
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The Vite development proxy forwards `/api` requests to the relay on `http://127.0.0.1:8005`. The dashboard also calls the control-plane registry endpoint on port `8000` for the `Instrument topology` action.
+
+## Useful commands
+
+```bash
+npm run lint
+npm run build
+npm run preview
+```
+
+## Dashboard behavior
+
+- All manifest services are shown as nodes.
+- Planned dependencies are dimmed and dashed until traffic observes them.
+- Active dependency edges show their latest observation time.
+- Healthy nodes are green; warning/recovery states are amber; failures are red; unknown state is gray.
+- The default view keeps routine telemetry out of the main timeline.
+- Technical details expose the complete SSE event history and manifest information.
+- `Instrument topology` explicitly starts the backend registry flow; loading the dashboard does not edit source files.
+
+The dashboard consumes the relay SSE stream at `/events/stream` and refreshes topology after relevant telemetry, health, and recovery events.

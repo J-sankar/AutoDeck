@@ -8,6 +8,8 @@
   --accent: #70a6ff;
   --good: #49d391;
   --good-bg: rgba(73, 211, 145, 0.12);
+  --warning: #f6b759;
+  --warning-bg: rgba(246, 183, 89, 0.12);
   --bad: #ff6e82;
   --bad-bg: rgba(255, 110, 130, 0.12);
   --bad-border: rgba(255, 110, 130, 0.32);

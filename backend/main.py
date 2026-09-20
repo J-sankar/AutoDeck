@@ -1,8 +1,8 @@
-from fastapi import FastAPI
+"""Compatibility entrypoint for ``uv run uvicorn main:app``.
 
-app = FastAPI(title="AutoDesk")
+The canonical control-plane application lives under the uv ``src`` layout.
+"""
 
+from backend.main import app
 
-@app.get("/")
-def health():
-    return {"status": "healthy"}
+__all__ = ["app"]

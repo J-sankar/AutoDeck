@@ -1,97 +1,211 @@
 # AutoDeck
 
-AutoDeck is a small self-healing service demo. It contains a Python service chain, a deterministic recovery agent, and a React/Vite dashboard scaffold.
+## Project Name
 
-The current service flow is:
+AutoDeck - a manifest-driven self-healing service control plane.
 
-```text
-Gateway (8001) -> Orders (8002) -> Inventory (8003)
-                              |
-                              v
-                        Payment (8004)
-```
+AutoDeck is a local demo of an agent-assisted reliability workflow. It observes a small service graph, reports live health and dependency activity, detects application failures, and safely repairs one approved failure scenario without allowing the model to run commands or edit arbitrary files.
 
-## Current implementation
+This project is submitted to the **Next-Gen Productivity & Automation** track of the Codex Community Hackathon Calicut. The track focuses on using Codex to build agents and tools that automate repetitive work, streamline workflows, and help teams move faster.
 
-Implemented:
+## Overview
 
-- four FastAPI services: Gateway, Orders, Inventory, and Payment
-- `/health` endpoints for every service
-- Gateway-to-Orders request forwarding
-- Orders-to-Inventory stock checks
-- Orders-to-Payment authorization
-- service manifest at `backend/src/backend/manifests/services.json`
-- deterministic diagnosis and source patching
-- recovery restart logic in `backend/src/backend/agent/recovery.py`
-- `python-dotenv` support for local configuration
-- React 19 + Vite dashboard scaffold
-
-The dashboard is still the default Vite interface. Live topology, event streaming, and recovery controls are planned next.
-
-## Repository structure
+AutoDeck demonstrates what happens when a service fails during a normal request:
 
 ```text
-AutoDeck/
-├── README.md
-├── CONTEXT.md
-├── .gitignore
-├── backend/
-│   ├── pyproject.toml
-│   ├── uv.lock
-│   ├── .python-version
-│   ├── .env                 # local only, ignored by Git
-│   └── src/backend/
-│       ├── agent/
-│       │   ├── diagnosis.py
-│       │   ├── patch.py
-│       │   └── recovery.py
-│       ├── manifests/services.json
-│       ├── services/
-│       │   ├── gateway/main.py
-│       │   ├── orders/main.py
-│       │   ├── inventory/main.py
-│       │   └── payment/main.py
-│       ├── tools/validate_manifest.py
-│       └── watcher_a/main.py
-└── dashboard/
-    ├── package.json
-    ├── package-lock.json
-    └── src/
+Gateway :8001 -> Orders :8002 -> Inventory :8003
+                         \\-> Payment  :8004
 ```
 
-Generated files such as `.venv/`, `__pycache__/`, `node_modules/`, build output, and `.env` files are ignored by Git.
+The application observes this flow through runtime telemetry, publishes structured events through an SSE relay, displays the live service graph in a React dashboard, and uses a guarded diagnosis and recovery pipeline for the seeded Orders failure.
 
-## Requirements
+The system is intentionally sized for a local hackathon demo. It is not presented as a production orchestration platform.
 
-- Python 3.11+
+## Problem Statement
+
+When a distributed application fails, developers often need to move between terminals, logs, health endpoints, dashboards, and source files to understand what happened. This makes a simple failure difficult to demonstrate, diagnose, and recover from consistently.
+
+For a small team or a local development environment, the repetitive work includes:
+
+- Finding which service is unhealthy or returned an application error.
+- Understanding which dependency path was involved in the request.
+- Watching a service restart and checking whether it recovered.
+- Diagnosing a known source-level defect.
+- Applying a safe repair and replaying the original request.
+- Keeping the dashboard state synchronized with the recovery lifecycle.
+
+AutoDeck addresses this workflow with a visible, constrained, and repeatable local recovery loop.
+
+## Solution
+
+AutoDeck uses the service manifest as the source of truth for service names, ports, health endpoints, dependencies, entrypoints, and registered source functions.
+
+The runtime flow is:
+
+```text
+request
+  -> service telemetry
+  -> relay event
+  -> dashboard topology update
+  -> application failure, if any
+  -> Watcher B diagnosis
+  -> allowlisted patch validation
+  -> service restart and health check
+  -> one request replay
+  -> recovery event and green topology
+```
+
+The diagnosis layer may use the OpenAI Responses API, but it is advisory only. The model receives targeted context and returns a structured decision. Local validation remains the final authority for service allowlisting, source-file allowlisting, exact replacement matching, compilation, restart behavior, and replay.
+
+Watcher A handles process and health recovery. Watcher B handles application-failure diagnosis and the approved repair flow. The dashboard keeps routine telemetry available in a technical view while showing a concise incident view for the demo.
+
+## Features
+
+- Four independently runnable FastAPI services: Gateway, Orders, Inventory, and Payment.
+- Manifest-driven service registry at `backend/src/backend/manifests/services.json`.
+- Tree-sitter source inspection that records registered service functions before telemetry planning.
+- Validated, idempotent telemetry decorators for approved endpoint functions.
+- Runtime request, health, failure, recovery, and dependency-edge events.
+- Thread-safe in-memory relay with HTTP APIs and Server-Sent Events (SSE).
+- Live React Flow and dagre topology graph with planned and observed edges.
+- Green, amber, and red incident states for healthy, recovering, and failed paths.
+- Watcher A with two-failure health thresholds and manifest-based process restart.
+- Watcher B with SSE consumption, single-flight repair per service, and diagnose-only default behavior.
+- Optional OpenAI diagnosis with deterministic fallback when credentials or model output are unavailable.
+- Safe patch executor limited to registered service files and exact approved replacements.
+- Automatic Orders restart, health verification, and one replay of the original Gateway request.
+- Direct `uv run` commands for starting the relay, control plane, services, and watchers.
+- Technical dashboard view for raw events, service metadata, and recovery history.
+
+## Tech Stack
+
+- **Frontend:** React 19, Vite, React Flow (`@xyflow/react`), dagre, CSS
+- **Backend:** Python 3.11+, FastAPI, Uvicorn, httpx, Pydantic, `uv`
+- **Database:** None in this demo; relay events are kept in a bounded in-memory store
+- **APIs / Services:** Local FastAPI services, relay HTTP/SSE API, OpenAI Responses API (optional), Tree-sitter Python parser
+- **Hosting / Deployment:** Local development processes only; no public deployment is currently configured
+- **Other Tools:** Codex, standard Python logging, `python-dotenv`, Git
+
+## Architecture
+
+```text
+                         +----------------------+
+                         | Dashboard :5173      |
+                         | topology + SSE       |
+                         +----------+-----------+
+                                    |
+                                    v
++-------------+       +------------+------------+       +----------------+
+| Gateway     |------>| Orders                  |------>| Inventory      |
+| :8001       |       | :8002                   |       | :8003          |
++-------------+       +------------+------------+       +----------------+
+                                    |
+                                    +-------------------> Payment :8004
+
+Relay :8005       event stream and topology API
+Control :8000     registry and telemetry setup API
+Watcher A         process and health recovery
+Watcher B         application failure diagnosis and repair
+```
+
+The canonical Python package is under `backend/src/backend/`. No duplicate backend package is required or supported outside that `src` layout.
+
+## Codex / OpenAI Usage
+
+Codex and OpenAI tools were used throughout the build for:
+
+- Ideation and architecture planning for the service graph, relay, watchers, registry, and recovery flow.
+- Incremental implementation of the backend services and frontend dashboard.
+- Debugging process ownership, duplicate watchers, port conflicts, relay restarts, and SSE reconnection behavior.
+- Designing the manifest-driven safety boundary for source inspection and patching.
+- Integrating structured OpenAI Responses API output for diagnosis decisions.
+- Validating model output against a strict schema instead of parsing free-form text.
+- Building and refining the live topology and incident-state UI.
+- Writing local runtime commands, testing instructions, troubleshooting guidance, and this documentation.
+
+The OpenAI diagnosis agent does not receive arbitrary repository access and does not execute commands. It receives the registered service context, the observed failure, the affected source file, and the original validated request fields. It can return `patch` or `no_repair`; local code decides whether a patch is safe to apply.
+
+## Demo
+
+### Live Demo
+
+No public deployment is currently available. The project runs as a local demo using the commands in [How to Run Locally](#how-to-run-locally).
+
+### Demo / Pitch Video
+
+Add the final demo or pitch video link here before submission:
+
+```text
+<demo-video-link>
+```
+
+Recommended demo sequence:
+
+1. Start the managed runtime and dashboard.
+2. Show four healthy nodes and planned dependency edges.
+3. Submit a successful order and show the observed edges.
+4. Reintroduce the approved Orders boundary bug.
+5. Submit the exact-stock order and show the path turn red.
+6. Watch diagnosis, patching, restart, replay, and the red -> amber -> green transition.
+7. Submit an unsupported `missing-item` request and show that it remains unrepaired rather than receiving an unsafe patch.
+
+## Screenshots
+
+The dashboard includes:
+
+- A live Gateway -> Orders -> Inventory/Payment topology graph.
+- Green healthy nodes, amber recovery states, and red failure states.
+- A concise incident panel for the latest actionable recovery phase.
+- An expandable technical panel containing service registry details and the raw SSE event timeline.
+- A topology instrumentation action backed by the control plane on port `8000`.
+
+Add committed screenshots here before publishing the final hackathon submission:
+
+```text
+screenshots/dashboard-healthy.png
+screenshots/dashboard-recovery.png
+screenshots/dashboard-technical-events.png
+```
+
+The screenshots currently used during development are local clipboard captures and are not treated as repository assets.
+
+## How to Run Locally
+
+### Requirements
+
+- Python 3.11 or newer
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 18+
+- Node.js 18 or newer
 - npm
 
-## Backend setup
+### Install
 
 From the repository root:
 
 ```bash
 cd backend
 uv sync
+
+cd ../dashboard
+npm install
 ```
 
-The backend dependencies are defined in `backend/pyproject.toml`, including FastAPI, Uvicorn, OpenAI, and `python-dotenv`.
+### Configure optional OpenAI diagnosis
 
-## Environment configuration
-
-Create `backend/.env` for local service URLs:
+Create `backend/.env` if needed. It is ignored by Git:
 
 ```env
 ORDERS_URL=http://127.0.0.1:8002
 INVENTORY_URL=http://127.0.0.1:8003
 PAYMENT_URL=http://127.0.0.1:8004
+GATEWAY_URL=http://127.0.0.1:8001
+AUTODECK_RELAY_URL=http://127.0.0.1:8005
 AUTODECK_AGENT_MODE=deterministic
+AUTODECK_AUTO_REPAIR=true
 AUTODECK_LOG_LEVEL=INFO
 ```
 
-For OpenAI diagnosis mode, also configure:
+For model-backed diagnosis:
 
 ```env
 AUTODECK_AGENT_MODE=openai
@@ -99,118 +213,254 @@ OPENAI_API_KEY=your-key-here
 OPENAI_MODEL=your-model-name
 ```
 
-Do not commit `.env` or API keys. The service modules call `load_dotenv()` and use shell environment variables when they are already set.
+Do not commit API keys or `.env` files. OpenAI mode falls back to deterministic diagnosis when credentials, API calls, or structured output validation fail.
 
-## Run the services
+### Start the demo
 
-Open four terminals. Run every command from the `backend/` directory.
-
-### Inventory
+Open separate terminals and run these commands from `backend/`. Start the relay and control plane first, then the services in dependency order:
 
 ```bash
+uv run uvicorn backend.relay.main:app --host 127.0.0.1 --port 8005
+uv run uvicorn backend.main:app --host 127.0.0.1 --port 8000
 uv run uvicorn backend.services.inventory.main:app --host 127.0.0.1 --port 8003
+uv run uvicorn backend.services.payment.main:app --host 127.0.0.1 --port 8004
+uv run uvicorn backend.services.orders.main:app --host 127.0.0.1 --port 8002
+uv run uvicorn backend.services.gateway.main:app --host 127.0.0.1 --port 8001
+uv run python -m backend.watcher_a.main
+uv run python -m backend.watcher_b.main
 ```
 
-### Payment
+Start the dashboard in another terminal:
 
 ```bash
-uv run uvicorn backend.services.payment.main:app --host 127.0.0.1 --port 8004
+cd dashboard
+npm run dev
 ```
 
-### Orders
+Open the Vite URL, normally `http://localhost:5173`.
+
+To restart one service, stop its current terminal process and rerun its direct Uvicorn command. For Orders:
 
 ```bash
 uv run uvicorn backend.services.orders.main:app --host 127.0.0.1 --port 8002
 ```
 
-### Gateway
+Stop each process with `Ctrl+C` in its terminal. Do not use Uvicorn `--reload` for the complete demo. A reload-enabled process watching patched backend files can restart the relay or control plane and interrupt the SSE stream.
 
-```bash
-uv run uvicorn backend.services.gateway.main:app --host 127.0.0.1 --port 8001
-```
-
-Start Inventory and Payment before Orders, and Orders before Gateway. Do not use `gateway:main`; Uvicorn needs the full import target ending in `:app`.
-
-## Check service health
+### Basic checks
 
 ```bash
 curl http://127.0.0.1:8001/health
 curl http://127.0.0.1:8002/health
 curl http://127.0.0.1:8003/health
 curl http://127.0.0.1:8004/health
+curl http://127.0.0.1:8005/health
+curl http://127.0.0.1:8005/topology
 ```
 
-Each service should return a healthy status response.
+### Test the demo with Postman
 
-## Send a test order
+Postman can be used instead of `curl` to demonstrate the complete request and recovery flow.
+
+Create a Postman collection named `AutoDeck Demo` and add these requests.
+
+#### 1. Check service health
+
+Create `GET` requests for:
+
+```text
+http://127.0.0.1:8001/health
+http://127.0.0.1:8002/health
+http://127.0.0.1:8003/health
+http://127.0.0.1:8004/health
+http://127.0.0.1:8005/health
+```
+
+Each service should return HTTP `200` with a healthy status. Also check the current graph:
+
+```text
+GET http://127.0.0.1:8005/topology
+```
+
+#### 2. Send a successful order
+
+Create:
+
+```text
+POST http://127.0.0.1:8001/orders
+```
+
+Under **Headers**, add:
+
+```text
+Content-Type: application/json
+```
+
+Under **Body -> raw -> JSON**, use:
+
+```json
+{
+  "item_id": "widget",
+  "quantity": 2
+}
+```
+
+The request should return HTTP `200`. This exercises Gateway, Orders, Inventory, and Payment. Return to the dashboard and confirm that the runtime edges become active.
+
+#### 3. Test an unsupported business failure
+
+Reuse the same request with this body:
+
+```json
+{
+  "item_id": "missing-item",
+  "quantity": 1
+}
+```
+
+Expected result:
+
+```text
+HTTP 404 - item not found
+```
+
+Watcher B should diagnose this as `no_repair`. It is a valid business error, so AutoDeck must not apply a source patch. The dashboard should not leave this request as an unresolved repair incident.
+
+#### 4. Demonstrate the approved repair
+
+Temporarily reintroduce the seeded Orders defect by changing:
+
+```python
+if inventory["quantity"] < order.quantity:
+```
+
+to:
+
+```python
+if inventory["quantity"] <= order.quantity:
+```
+
+Restart Orders using its direct `uv run` command, then send this Postman request:
+
+```json
+{
+  "item_id": "widget",
+  "quantity": 10
+}
+```
+
+Expected sequence:
+
+```text
+HTTP 409
+  -> application_failure event
+  -> red incident in dashboard
+  -> OpenAI or deterministic diagnosis
+  -> orange patch/restart state
+  -> Orders health recovery
+  -> one Gateway replay
+  -> HTTP 200 and green graph
+```
+
+#### 5. Inspect events in Postman
+
+Add:
+
+```text
+GET http://127.0.0.1:8005/events?limit=20
+```
+
+This shows the structured event history. To watch live events, use:
+
+```text
+GET http://127.0.0.1:8005/events/stream
+```
+
+Keep the request open while sending orders from the other Postman tab. The dashboard consumes the same SSE stream.
+
+#### 6. Start the registry flow
+
+To instrument approved service functions, create:
+
+```text
+POST http://127.0.0.1:8000/registry/telemetry/setup
+```
+
+Then inspect the returned plan and applied files. Refresh the dashboard and submit another successful order to observe the telemetry edges.
+
+Send a successful order:
 
 ```bash
-curl -X POST http://127.0.0.1:8001/orders \
-  -H "content-type: application/json" \
+curl -i -X POST http://127.0.0.1:8001/orders \
+  -H 'content-type: application/json' \
   -d '{"item_id":"widget","quantity":2}'
 ```
 
-A successful response travels through Gateway, Orders, Inventory, and Payment.
-
-## Run the recovery agent
-
-The recovery CLI currently supports the Orders repair flow. Run it from `backend/`:
+Trigger a valid business failure that should not be patched:
 
 ```bash
-uv run python -m backend.agent.recovery \
-  --service orders \
-  --status-code 409 \
-  --detail "insufficient inventory" \
-  --request-json '{"item_id":"widget","quantity":10}'
+curl -i -X POST http://127.0.0.1:8001/orders \
+  -H 'content-type: application/json' \
+  -d '{"item_id":"missing-item","quantity":1}'
 ```
 
-The workflow:
-
-1. reads the service manifest
-2. diagnoses the known Orders failure
-3. validates and applies an approved source replacement
-4. stops the process listening on port `8002`
-5. restarts Orders
-6. waits for its health endpoint
-
-The deterministic repair is approved only when the known seeded comparison is present. If the source is already repaired, the command correctly reports that no approved repair is available.
-
-## Validate the manifest
+### Run validation
 
 ```bash
+cd backend
+uv run python -m compileall -q src/backend
 uv run python -m backend.tools.validate_manifest
-```
 
-## Dashboard
-
-From the repository root:
-
-```bash
-cd dashboard
-npm install
-npm run dev
-```
-
-Other frontend commands:
-
-```bash
-npm run build
+cd ../dashboard
 npm run lint
-npm run preview
+npm run build
 ```
 
-## Design principles
+## Additional Notes
 
-- Keep service recovery deterministic and observable.
-- Let diagnosis produce a structured decision rather than arbitrary file edits.
-- Validate patch targets against the service manifest.
-- Keep the dashboard independent from backend recovery internals.
-- Build the live dashboard only after the service and recovery paths are reliable.
+### Demo repair scenario
 
-## Next steps
+The first approved repair is the Orders exact-stock boundary bug. The correct check is:
 
-1. Add live service events and a relay/WebSocket endpoint.
-2. Connect the dashboard to service health and recovery events.
-3. Expand `watcher_a` into heartbeat-based process monitoring.
-4. Add replay verification to the recovery workflow.
-5. Replace the starter dashboard with the service topology UI.
+```python
+if inventory["quantity"] < order.quantity:
+```
+
+Changing it to `<=` incorrectly rejects a request when the requested quantity exactly equals available inventory. With the defect intentionally reintroduced, a request for ten widgets produces the diagnosis and recovery flow:
+
+```text
+application failure
+  -> red incident
+  -> diagnosis and patching
+  -> amber recovery state
+  -> patch validation
+  -> Orders restart and health check
+  -> Gateway replay
+  -> green recovered path
+```
+
+The `missing-item` case is deliberately not patched. It is a valid business error, so the diagnosis returns `no_repair` and the application remains safe.
+
+### Current limitations
+
+- The relay event store is process-local and in-memory; events are lost when the relay restarts.
+- The demo runs on one machine and does not provide production process isolation, authentication, or authorization.
+- Only the approved Orders repair is implemented.
+- Watcher A and Watcher B are separate processes and require the relay to be available for shared live events.
+- The dashboard uses SSE rather than a durable event bus or WebSocket transport.
+- Recovery state is based on structured events and manifest metadata, not a persistent incident database.
+- No public hosting or deployment configuration is included yet.
+
+### Future scope
+
+- Correlate every request across Gateway, Orders, Inventory, and Payment with a durable request ID.
+- Derive affected paths dynamically from correlated runtime events instead of relying on demo-level path metadata.
+- Add a persistent event store and a shared relay suitable for multiple hosts.
+- Add authentication, authorization, audit history, and approval controls for production use.
+- Add more allowlisted repair scenarios for Inventory, Payment, and Gateway.
+- Add an operator review workflow before automatic patch application.
+- Package the runtime with containers and deploy it to a managed environment.
+- Add automated integration tests for failure injection, SSE reconnection, watcher recovery, and replay.
+- Add richer dashboard filtering, historical incidents, and exportable recovery reports.
+
+AutoDeck’s current goal is a clear, safe, and demoable proof of the recovery workflow. The future scope expands that proof toward a durable multi-service reliability platform without weakening the local safety boundaries demonstrated here.
