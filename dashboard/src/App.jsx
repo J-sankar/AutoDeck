@@ -358,7 +358,7 @@ function App() {
       <header className="dashboard-header">
         <div>
           <p className="eyebrow">AUTODECK / CONTROL PLANE</p>
-          <h1>Service recovery dashboard</h1>
+          <h1>AutoDeck</h1>
           <p className="subtitle">A live control room for service health, dependency flow, and safe recovery.</p>
         </div>
         <div className={`connection ${state.error ? 'offline' : 'online'}`}>
